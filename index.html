@@ -79,6 +79,7 @@
     input[type="text"]:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
     textarea { resize: vertical; min-height: 66px; }
 
+    /* FIX: .api-btn only applies to API call buttons, never to #clearBtn */
     .api-btn {
       display: block; width: 100%; margin-top: 13px; padding: 10px 16px;
       background: var(--card); border: 1px solid var(--green-dim); border-radius: 7px;
@@ -100,6 +101,8 @@
     .response-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 480px; }
     .response-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
     .response-title { font-family: 'Space Mono', monospace; font-size: .65rem; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+
+    /* FIX: #clearBtn has completely independent styles, no shared rules with .api-btn */
     #clearBtn {
       background: transparent; border: 1px solid var(--border2); border-radius: 20px;
       color: var(--muted); font-family: 'Space Mono', monospace; font-size: .6rem;
@@ -118,6 +121,7 @@
     #metaMethod { color: var(--accent); }
 
     .response-body { flex: 1; padding: 18px 20px; overflow-y: auto; }
+    /* FIX: plain <div> instead of <textarea readonly>, textContent always repaints */
     #responseOutput { font-family: 'Space Mono', monospace; font-size: .76rem; line-height: 1.75; white-space: pre-wrap; word-break: break-all; color: #86efac; }
     #responseOutput.placeholder { color: var(--border2); }
 
@@ -197,6 +201,7 @@
 
   </div>
 
+  <!-- FIX: #clearBtn has no class, no inline onclick -->
   <div class="response-panel">
     <div class="response-header">
       <span class="response-title">Response</span>
@@ -207,6 +212,7 @@
       <span id="metaMethod"></span>
       <span id="metaTime">awaiting request…</span>
     </div>
+    <!-- FIX: plain div, not textarea readonly -->
     <div class="response-body" id="responseBody">
       <div id="responseOutput" class="placeholder">// Response will appear here…</div>
     </div>
@@ -224,36 +230,48 @@
   const elDot    = document.getElementById('statusDot');
   const elMethod = document.getElementById('metaMethod');
   const elTime   = document.getElementById('metaTime');
+  const elBody   = document.getElementById('responseBody');
 
-  // BUG: sets .value on the cached textarea ref — skips repaint after first call
+  // FIX: replaceChildren() creates a brand-new node every time
+  // guaranteed repaint in every browser
   function paint(method, data, ok) {
-    elDot.className = 'status-dot ' + (ok ? 'ok' : 'err');
+    elDot.className      = 'status-dot ' + (ok ? 'ok' : 'err');
     elMethod.textContent = method;
     elTime.textContent   = '· ' + new Date().toLocaleTimeString();
-    const out = document.getElementById('responseOutput');
-    out.classList.remove('placeholder');
-    out.value = JSON.stringify(data, null, 2);  // BUG: no repaint on subsequent calls
+    const next           = document.createElement('div');
+    next.id              = 'responseOutput';
+    next.textContent     = JSON.stringify(data, null, 2);
+    elBody.replaceChildren(next);
+    elBody.scrollTop     = 0;
   }
-  // BUG: paintClear is global (window) instead of scoped — onclick="paintClear()" works
-  // once but is fragile and inconsistent with addEventListener pattern
-  window.paintClear = function () {
-    elDot.className = 'status-dot'; elMethod.textContent = ''; elTime.textContent = 'awaiting request…';
-    const out = document.getElementById('responseOutput');
-    out.classList.add('placeholder');
-    out.value = '// Response will appear here…';
-  };
+
   function paintError(method, msg) { paint(method, { error: msg }, false); }
+
+  function paintClear() {
+    elDot.className      = 'status-dot';
+    elMethod.textContent = '';
+    elTime.textContent   = 'awaiting request…';
+    const next           = document.createElement('div');
+    next.id              = 'responseOutput';
+    next.className       = 'placeholder';
+    next.textContent     = '// Response will appear here…';
+    elBody.replaceChildren(next);
+  }
+
   function busy(btn, on) { btn.disabled = on; btn.classList.toggle('loading', on); }
+
   function creds() {
     const id = elId.value.trim(), token = elToken.value.trim();
     if (!id || !token) { paintError('Error', 'Please fill in IdInstance and ApiTokenInstance'); return null; }
     return { id, token };
   }
+
   async function apiFetch(method, url, body) {
     const init = { method, headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) init.body = JSON.stringify(body);
     const res = await fetch(url, init);
-    return res.json().catch(() => ({ httpStatus: res.status }));
+    const json = await res.json().catch(() => ({ httpStatus: res.status }));
+    return json;
   }
 
   // ── getSettings ───────────────────────────────────────────────
@@ -276,7 +294,7 @@
     finally   { busy(btn, false); }
   }
 
-    // ── sendMessage ───────────────────────────────────────────────
+  // ── sendMessage ───────────────────────────────────────────────
   async function onSendMessage() {
     const c = creds(); if (!c) return;
     const phone = document.getElementById('sendMsgPhone').value.trim();
@@ -295,19 +313,20 @@
     const fileUrl  = document.getElementById('sendFileUrl').value.trim();
     const fileName = document.getElementById('sendFileName').value.trim();
     const caption  = document.getElementById('sendFileCaption').value.trim();
-    if (!phone || !fileUrl || !fileName) { paintError('sendFileByUrl', 'Enter Recipient Phone, File Url, and File Name'); return; }
+    if (!phone || !fileUrl || !fileName) { paintError('sendFileByUrl', 'Enter Recipient Phone, File URL, and File Name'); return; }
     const btn = document.getElementById('btnSendFile'); busy(btn, true);
     try   { paint('sendFileByUrl', await apiFetch('POST', `${BASE}/waInstance${c.id}/sendFileByUrl/${c.token}`, { chatId: `${phone}@c.us`, urlFile: fileUrl, fileName, caption }), true); }
     catch (e) { paintError('sendFileByUrl', e.message); }
     finally   { busy(btn, false); }
   }
- 
+
+  // FIX: all buttons wired via addEventListener — no inline onclick anywhere
   document.getElementById('btnGetSettings').addEventListener('click', onGetSettings);
-  document.getElementById('btnGetState').addEventListener('click', onGetState);
+  document.getElementById('btnGetState')   .addEventListener('click', onGetState);
   document.getElementById('btnSendMessage').addEventListener('click', onSendMessage);
-  document.getElementById('btnSendFile').addEventListener('click', onSendFile);
-  // BUG: clear button wired via inline onclick="paintClear()" in HTML, not addEventListener
- 
+  document.getElementById('btnSendFile')   .addEventListener('click', onSendFile);
+  document.getElementById('clearBtn')      .addEventListener('click', paintClear);
+
 })();
 </script>
 </body>
