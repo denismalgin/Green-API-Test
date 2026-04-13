@@ -290,8 +290,21 @@
     finally   { busy(btn, false); }
   }
 
+    // ── sendMessage ───────────────────────────────────────────────
+  async function onSendMessage() {
+    const c = creds(); if (!c) return;
+    const phone = document.getElementById('sendMsgPhone').value.trim();
+    const text  = document.getElementById('sendMsgText').value.trim();
+    if (!phone || !text) { paintError('sendMessage', 'Enter Recipient Phone and Message Text'); return; }
+    const btn = document.getElementById('btnSendMessage'); busy(btn, true);
+    try   { paint('sendMessage', await apiFetch('POST', `${BASE}/waInstance${c.id}/sendMessage/${c.token}`, { chatId: `${phone}@c.us`, message: text }), true); }
+    catch (e) { paintError('sendMessage', e.message); }
+    finally   { busy(btn, false); }
+  }
+
   document.getElementById('btnGetSettings').addEventListener('click', onGetSettings);
   document.getElementById('btnGetState').addEventListener('click', onGetState);
+  document.getElementById('btnSendMessage').addEventListener('click', onSendMessage);
   document.getElementById('clearBtn').addEventListener('click', paintClear);
 
 })();
