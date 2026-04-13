@@ -224,50 +224,36 @@
   const elDot    = document.getElementById('statusDot');
   const elMethod = document.getElementById('metaMethod');
   const elTime   = document.getElementById('metaTime');
-  const elBody   = document.getElementById('responseBody');
 
+  // BUG: sets .value on the cached textarea ref — skips repaint after first call
   function paint(method, data, ok) {
-    elDot.className      = 'status-dot ' + (ok ? 'ok' : 'err');
+    elDot.className = 'status-dot ' + (ok ? 'ok' : 'err');
     elMethod.textContent = method;
     elTime.textContent   = '· ' + new Date().toLocaleTimeString();
-    const next           = document.createElement('div');
-    next.id              = 'responseOutput';
-    next.textContent     = JSON.stringify(data, null, 2);
-    elBody.replaceChildren(next);
-    elBody.scrollTop     = 0;
+    const out = document.getElementById('responseOutput');
+    out.classList.remove('placeholder');
+    out.value = JSON.stringify(data, null, 2);  // BUG: no repaint on subsequent calls
   }
-
+  // BUG: paintClear is global (window) instead of scoped — onclick="paintClear()" works
+  // once but is fragile and inconsistent with addEventListener pattern
+  window.paintClear = function () {
+    elDot.className = 'status-dot'; elMethod.textContent = ''; elTime.textContent = 'awaiting request…';
+    const out = document.getElementById('responseOutput');
+    out.classList.add('placeholder');
+    out.value = '// Response will appear here…';
+  };
   function paintError(method, msg) { paint(method, { error: msg }, false); }
-
-  function paintClear() {
-    elDot.className      = 'status-dot';
-    elMethod.textContent = '';
-    elTime.textContent   = 'awaiting request…';
-    const next           = document.createElement('div');
-    next.id              = 'responseOutput';
-    next.className       = 'placeholder';
-    next.textContent     = '// Response will appear here…';
-    elBody.replaceChildren(next);
-  }
-
-  function busy(btn, on) {
-    btn.disabled = on;
-    btn.classList.toggle('loading', on);
-  }
-
+  function busy(btn, on) { btn.disabled = on; btn.classList.toggle('loading', on); }
   function creds() {
-    const id    = elId.value.trim();
-    const token = elToken.value.trim();
+    const id = elId.value.trim(), token = elToken.value.trim();
     if (!id || !token) { paintError('Error', 'Please fill in IdInstance and ApiTokenInstance'); return null; }
     return { id, token };
   }
-
   async function apiFetch(method, url, body) {
     const init = { method, headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const res  = await fetch(url, init);
-    const json = await res.json().catch(() => ({ httpStatus: res.status }));
-    return json;
+    const res = await fetch(url, init);
+    return res.json().catch(() => ({ httpStatus: res.status }));
   }
 
   // ── getSettings ───────────────────────────────────────────────
@@ -302,11 +288,26 @@
     finally   { busy(btn, false); }
   }
 
+  // ── sendFileByUrl ─────────────────────────────────────────────
+  async function onSendFile() {
+    const c = creds(); if (!c) return;
+    const phone    = document.getElementById('sendFilePhone').value.trim();
+    const fileUrl  = document.getElementById('sendFileUrl').value.trim();
+    const fileName = document.getElementById('sendFileName').value.trim();
+    const caption  = document.getElementById('sendFileCaption').value.trim();
+    if (!phone || !fileUrl || !fileName) { paintError('sendFileByUrl', 'Enter Recipient Phone, File Url, and File Name'); return; }
+    const btn = document.getElementById('btnSendFile'); busy(btn, true);
+    try   { paint('sendFileByUrl', await apiFetch('POST', `${BASE}/waInstance${c.id}/sendFileByUrl/${c.token}`, { chatId: `${phone}@c.us`, urlFile: fileUrl, fileName, caption }), true); }
+    catch (e) { paintError('sendFileByUrl', e.message); }
+    finally   { busy(btn, false); }
+  }
+ 
   document.getElementById('btnGetSettings').addEventListener('click', onGetSettings);
   document.getElementById('btnGetState').addEventListener('click', onGetState);
   document.getElementById('btnSendMessage').addEventListener('click', onSendMessage);
-  document.getElementById('clearBtn').addEventListener('click', paintClear);
-
+  document.getElementById('btnSendFile').addEventListener('click', onSendFile);
+  // BUG: clear button wired via inline onclick="paintClear()" in HTML, not addEventListener
+ 
 })();
 </script>
 </body>
