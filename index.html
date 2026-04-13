@@ -39,7 +39,6 @@
       padding: 36px 20px 60px;
     }
 
-    /* HEADER */
     header {
       width: 100%;
       max-width: 1100px;
@@ -75,7 +74,6 @@
       text-transform: uppercase;
     }
 
-    /* WORKSPACE */
     .workspace {
       width: 100%;
       max-width: 1100px;
@@ -85,7 +83,6 @@
       align-items: start;
     }
 
-    /* LEFT PANEL */
     .left-col { display: flex; flex-direction: column; gap: 14px; }
 
     .card {
@@ -105,12 +102,7 @@
       align-items: center;
       gap: 8px;
     }
-    .card-title::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border);
-    }
+    .card-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
     .section {
       background: var(--surface);
@@ -130,15 +122,9 @@
     .field { margin-bottom: 12px; }
     .field:last-of-type { margin-bottom: 0; }
 
-    label {
-      display: block;
-      font-size: .75rem;
-      color: var(--muted);
-      margin-bottom: 5px;
-    }
+    label { display: block; font-size: .75rem; color: var(--muted); margin-bottom: 5px; }
 
-    input[type="text"],
-    textarea {
+    input[type="text"], textarea {
       width: 100%;
       background: var(--card);
       border: 1px solid var(--border2);
@@ -150,14 +136,12 @@
       outline: none;
       transition: border-color .18s, box-shadow .18s;
     }
-    input[type="text"]:focus,
-    textarea:focus {
+    input[type="text"]:focus, textarea:focus {
       border-color: var(--green);
       box-shadow: 0 0 0 3px var(--green-glow);
     }
     textarea { resize: vertical; min-height: 66px; }
 
-    /* API BUTTONS */
     .api-btn {
       display: block;
       width: 100%;
@@ -175,13 +159,19 @@
       position: relative;
       overflow: hidden;
     }
-    .api-btn:hover {
-      background: var(--green-glow);
-      box-shadow: 0 0 16px var(--green-glow);
+    .api-btn:hover:not(:disabled) { background: var(--green-glow); box-shadow: 0 0 16px var(--green-glow); }
+    .api-btn:active:not(:disabled) { opacity: .8; }
+    .api-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .api-btn.loading::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: -100%;
+      width: 100%; height: 2px;
+      background: var(--green);
+      animation: sweep 0.9s linear infinite;
     }
-    .api-btn:active { opacity: .8; }
+    @keyframes sweep { to { left: 100%; } }
 
-    /* RIGHT PANEL */
     .response-panel {
       background: var(--card);
       border: 1px solid var(--border);
@@ -234,14 +224,13 @@
       border-radius: 50%;
       background: var(--border2);
       flex-shrink: 0;
+      transition: background .25s, box-shadow .25s;
     }
+    .status-dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.err { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
     #metaMethod { color: var(--accent); }
 
-    .response-body {
-      flex: 1;
-      padding: 18px 20px;
-      overflow-y: auto;
-    }
+    .response-body { flex: 1; padding: 18px 20px; overflow-y: auto; }
     #responseOutput {
       font-family: 'Space Mono', monospace;
       font-size: .76rem;
@@ -272,7 +261,6 @@
 
 <div class="workspace">
 
-  <!-- LEFT -->
   <div class="left-col">
 
     <div class="card">
@@ -317,7 +305,7 @@
         <input type="text" id="sendFilePhone" placeholder="79001234567" />
       </div>
       <div class="field">
-        <label>File Url</label>
+        <label>File URL</label>
         <input type="text" id="sendFileUrl" placeholder="https://example.com/photo.jpg" />
       </div>
       <div class="field">
@@ -333,7 +321,6 @@
 
   </div>
 
-  <!-- RIGHT -->
   <div class="response-panel">
     <div class="response-header">
       <span class="response-title">Response</span>
@@ -351,5 +338,78 @@
 
 </div>
 
+<script>
+(function () {
+  'use strict';
+
+  const BASE = 'https://api.green-api.com';
+
+  // ── DOM refs ──────────────────────────────────────────────────
+  const elId     = document.getElementById('idInstance');
+  const elToken  = document.getElementById('apiToken');
+  const elDot    = document.getElementById('statusDot');
+  const elMethod = document.getElementById('metaMethod');
+  const elTime   = document.getElementById('metaTime');
+  const elBody   = document.getElementById('responseBody');
+
+  // ── paint: replace output node entirely for guaranteed repaint ─
+  function paint(method, data, ok) {
+    elDot.className      = 'status-dot ' + (ok ? 'ok' : 'err');
+    elMethod.textContent = method;
+    elTime.textContent   = '· ' + new Date().toLocaleTimeString();
+    const next           = document.createElement('div');
+    next.id              = 'responseOutput';
+    next.textContent     = JSON.stringify(data, null, 2);
+    elBody.replaceChildren(next);
+    elBody.scrollTop     = 0;
+  }
+
+  function paintError(method, msg) { paint(method, { error: msg }, false); }
+
+  function paintClear() {
+    elDot.className      = 'status-dot';
+    elMethod.textContent = '';
+    elTime.textContent   = 'awaiting request…';
+    const next           = document.createElement('div');
+    next.id              = 'responseOutput';
+    next.className       = 'placeholder';
+    next.textContent     = '// Response will appear here…';
+    elBody.replaceChildren(next);
+  }
+
+  // ── busy: disable button + show loading bar ───────────────────
+  function busy(btn, on) {
+    btn.disabled = on;
+    btn.classList.toggle('loading', on);
+  }
+
+  // ── creds: read + validate credentials ───────────────────────
+  function creds() {
+    const id    = elId.value.trim();
+    const token = elToken.value.trim();
+    if (!id || !token) {
+      paintError('Error', 'Please fill in IdInstance and ApiTokenInstance');
+      return null;
+    }
+    return { id, token };
+  }
+
+  // ── apiFetch: generic fetch wrapper ──────────────────────────
+  async function apiFetch(method, url, body) {
+    const init = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const res  = await fetch(url, init);
+    const json = await res.json().catch(() => ({ httpStatus: res.status }));
+    return json;
+  }
+
+  // ── wire clear button ─────────────────────────────────────────
+  document.getElementById('clearBtn').addEventListener('click', paintClear);
+
+  // expose shared utils for handler scripts added in later commits
+  window._api = { BASE, creds, apiFetch, paint, paintError, busy };
+
+})();
+</script>
 </body>
 </html>
