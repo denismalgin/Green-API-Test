@@ -280,7 +280,18 @@
     finally   { busy(btn, false); }
   }
 
+  // ── getStateInstance ──────────────────────────────────────────
+  async function onGetState() {
+    const c = creds(); if (!c) return;
+    const btn = document.getElementById('btnGetState');
+    busy(btn, true);
+    try   { paint('getStateInstance', await apiFetch('GET', `${BASE}/waInstance${c.id}/getStateInstance/${c.token}`), true); }
+    catch (e) { paintError('getStateInstance', e.message); }
+    finally   { busy(btn, false); }
+  }
+
   document.getElementById('btnGetSettings').addEventListener('click', onGetSettings);
+  document.getElementById('btnGetState').addEventListener('click', onGetState);
   document.getElementById('clearBtn').addEventListener('click', paintClear);
 
 })();
